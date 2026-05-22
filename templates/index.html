@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resume Agent — Sabari</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0e0f;
+  --surface: #161618;
+  --surface2: #1e1e21;
+  --border: #2a2a2e;
+  --border2: #353539;
+  --accent: #7c6af7;
+  --accent2: #a89cf7;
+  --green: #4ade80;
+  --red: #f87171;
+  --amber: #fbbf24;
+  --text: #e8e8ec;
+  --text2: #9999a8;
+  --text3: #5a5a6a;
+  --mono: 'DM Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; min-height:100vh; }
+
+/* Layout */
+.shell { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
+.sidebar { background:var(--surface); border-right:1px solid var(--border); padding:0; display:flex; flex-direction:column; }
+.main { overflow-y:auto; }
+
+/* Sidebar */
+.logo { padding:24px 20px 20px; border-bottom:1px solid var(--border); }
+.logo-title { font-size:13px; font-weight:500; color:var(--text); letter-spacing:0.05em; text-transform:uppercase; }
+.logo-sub { font-size:11px; color:var(--text3); margin-top:3px; font-family:var(--mono); }
+
+.nav { padding:12px 0; flex:1; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:9px 20px; cursor:pointer; color:var(--text2); font-size:13px; transition:all 0.15s; border-left:2px solid transparent; }
+.nav-item:hover { color:var(--text); background:var(--surface2); }
+.nav-item.active { color:var(--accent2); border-left-color:var(--accent); background:rgba(124,106,247,0.08); }
+.nav-icon { width:16px; height:16px; opacity:0.7; }
+.nav-item.active .nav-icon { opacity:1; }
+
+.status-bar { padding:16px 20px; border-top:1px solid var(--border); }
+.status-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:7px; }
+.status-dot.ok { background:var(--green); box-shadow:0 0 6px var(--green); }
+.status-dot.err { background:var(--red); }
+.status-dot.warn { background:var(--amber); }
+.status-text { font-size:12px; color:var(--text2); font-family:var(--mono); }
+
+/* Main panels */
+.panel { display:none; padding:40px 48px; max-width:960px; }
+.panel.active { display:block; }
+.panel-title { font-size:22px; font-weight:500; margin-bottom:6px; }
+.panel-sub { font-size:13px; color:var(--text2); margin-bottom:36px; line-height:1.6; }
+
+/* Form elements */
+.form-row { margin-bottom:20px; }
+.form-row label { display:block; font-size:12px; color:var(--text2); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.06em; font-family:var(--mono); }
+.form-row input, .form-row textarea {
+  width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  padding:10px 14px; color:var(--text); font-family:var(--sans); font-size:14px;
+  transition:border-color 0.15s; resize:vertical;
+}
+.form-row input:focus, .form-row textarea:focus { outline:none; border-color:var(--accent); }
+.form-row textarea { min-height:180px; line-height:1.6; }
+.form-row input::placeholder, .form-row textarea::placeholder { color:var(--text3); }
+
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+
+/* Buttons */
+.btn { display:inline-flex; align-items:center; gap:8px; padding:10px 20px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all 0.15s; font-family:var(--sans); }
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary:hover { background:#9080f8; }
+.btn-primary:disabled { background:var(--surface2); color:var(--text3); cursor:not-allowed; }
+.btn-ghost { background:transparent; color:var(--text2); border:1px solid var(--border); }
+.btn-ghost:hover { border-color:var(--border2); color:var(--text); }
+.btn-green { background:rgba(74,222,128,0.12); color:var(--green); border:1px solid rgba(74,222,128,0.25); }
+.btn-green:hover { background:rgba(74,222,128,0.2); }
+
+/* Loading state */
+.loading-wrap { display:none; align-items:center; gap:14px; padding:20px 0; }
+.loading-wrap.show { display:flex; }
+.spinner { width:20px; height:20px; border:2px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-text { font-size:13px; color:var(--text2); font-family:var(--mono); }
+
+/* Analysis card */
+.analysis-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:24px; margin-bottom:28px; }
+.analysis-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.analysis-title { font-size:15px; font-weight:500; }
+.badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:500; font-family:var(--mono); }
+.badge-green { background:rgba(74,222,128,0.12); color:var(--green); }
+.badge-amber { background:rgba(251,191,36,0.12); color:var(--amber); }
+.badge-red { background:rgba(248,113,113,0.12); color:var(--red); }
+.badge-purple { background:rgba(124,106,247,0.15); color:var(--accent2); }
+
+.analysis-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px; }
+.analysis-stat { background:var(--surface2); border-radius:7px; padding:14px 16px; }
+.analysis-stat-label { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:0.06em; font-family:var(--mono); margin-bottom:6px; }
+.analysis-stat-value { font-size:18px; font-weight:500; }
+
+.tags { display:flex; flex-wrap:wrap; gap:6px; }
+.tag { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:3px 9px; font-size:11px; color:var(--text2); font-family:var(--mono); }
+.tag.highlight { border-color:rgba(124,106,247,0.4); color:var(--accent2); background:rgba(124,106,247,0.08); }
+
+.reasoning-text { font-size:13px; color:var(--text2); line-height:1.7; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+
+/* Diff viewer */
+.diff-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:0; }
+.diff-tab { padding:9px 16px; font-size:12px; color:var(--text3); cursor:pointer; border-bottom:2px solid transparent; font-family:var(--mono); transition:all 0.15s; }
+.diff-tab:hover { color:var(--text2); }
+.diff-tab.active { color:var(--accent2); border-bottom-color:var(--accent); }
+
+.diff-container { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:28px; }
+.diff-panel { display:none; }
+.diff-panel.active { display:block; }
+.diff-content { font-family:var(--mono); font-size:12px; line-height:1.6; overflow-x:auto; max-height:420px; overflow-y:auto; }
+.diff-line { display:flex; }
+.diff-line-num { width:40px; min-width:40px; text-align:right; padding:1px 8px 1px 0; color:var(--text3); user-select:none; border-right:1px solid var(--border); }
+.diff-line-content { padding:1px 0 1px 12px; white-space:pre; flex:1; }
+.diff-line.added { background:rgba(74,222,128,0.07); }
+.diff-line.added .diff-line-content { color:var(--green); }
+.diff-line.added .diff-line-num::before { content:'+ '; color:var(--green); }
+.diff-line.removed { background:rgba(248,113,113,0.07); }
+.diff-line.removed .diff-line-content { color:var(--red); opacity:0.7; text-decoration:line-through; }
+.diff-line.removed .diff-line-num::before { content:'− '; color:var(--red); }
+.diff-line.same .diff-line-content { color:var(--text3); }
+
+/* Action bar */
+.action-bar { display:flex; gap:12px; align-items:center; padding:20px 0; }
+
+/* History */
+.history-list { display:flex; flex-direction:column; gap:10px; }
+.history-item { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
+.history-meta { }
+.history-name { font-size:14px; font-weight:500; }
+.history-date { font-size:12px; color:var(--text3); font-family:var(--mono); margin-top:3px; }
+.history-badges { display:flex; gap:6px; margin-top:8px; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text3); }
+.empty-state-icon { font-size:32px; margin-bottom:12px; }
+
+/* Config panel */
+.config-row { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin-bottom:12px; display:flex; align-items:flex-start; gap:16px; }
+.config-icon { width:36px; height:36px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.config-icon.ok { background:rgba(74,222,128,0.12); }
+.config-icon.err { background:rgba(248,113,113,0.12); }
+.config-label { font-size:13px; font-weight:500; margin-bottom:3px; }
+.config-val { font-size:12px; color:var(--text3); font-family:var(--mono); }
+
+code { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:2px 7px; font-family:var(--mono); font-size:12px; color:var(--accent2); }
+.code-block { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:16px 20px; font-family:var(--mono); font-size:12px; color:var(--text2); line-height:1.8; margin:12px 0; }
+.code-block .cmd { color:var(--accent2); }
+.code-block .comment { color:var(--text3); }
+
+.success-banner { background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.2); border-radius:8px; padding:16px 20px; display:none; margin-bottom:20px; }
+.success-banner.show { display:block; }
+.success-banner p { font-size:13px; color:var(--green); }
+.success-banner code { background:rgba(74,222,128,0.1); border-color:rgba(74,222,128,0.2); color:var(--green); }
+
+.error-banner { background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.2); border-radius:8px; padding:16px 20px; display:none; margin-bottom:20px; }
+.error-banner.show { display:block; }
+.error-banner p { font-size:13px; color:var(--red); }
+
+/* Result sections */
+.section-label { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:0.08em; font-family:var(--mono); margin-bottom:12px; }
+.result-section { margin-bottom:32px; }
+
+hr.divider { border:none; border-top:1px solid var(--border); margin:32px 0; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-title">Resume Agent</div>
+      <div class="logo-sub">sabari mathavan</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" data-panel="tailor">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 001.357 2.059l.96.38a2.25 2.25 0 011.357 2.059v1.344M9.75 3.104A23.961 23.961 0 0112 3c.88 0 1.744.065 2.571.186m0 0a2.25 2.25 0 011.679 1.557l.004.015M15 9.75a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Tailor Resume
+      </div>
+      <div class="nav-item" data-panel="history">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        History
+      </div>
+      <div class="nav-item" data-panel="setup">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Setup
+      </div>
+    </nav>
+    <div class="status-bar">
+      <span class="status-dot warn" id="status-dot"></span>
+      <span class="status-text" id="status-text">checking...</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- TAILOR PANEL -->
+    <div class="panel active" id="panel-tailor">
+      <div class="panel-title">Tailor Resume</div>
+      <div class="panel-sub">Paste a job description and the agent will select the best projects, rewrite bullets to match keywords, and ensure it fits one page.</div>
+
+      <div id="error-banner" class="error-banner"><p id="error-text"></p></div>
+      <div id="success-banner" class="success-banner"><p id="success-text"></p></div>
+
+      <!-- Input form -->
+      <div id="input-form">
+        <div class="form-grid">
+          <div class="form-row">
+            <label>Company</label>
+            <input type="text" id="company" placeholder="e.g. Google" />
+          </div>
+          <div class="form-row">
+            <label>Role</label>
+            <input type="text" id="role" placeholder="e.g. Senior Data Scientist" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label>API Key (or set ANTHROPIC_API_KEY env var)</label>
+          <input type="password" id="api-key" placeholder="sk-ant-..." />
+        </div>
+        <div class="form-row">
+          <label>Job Description</label>
+          <textarea id="jd" placeholder="Paste the full job description here..."></textarea>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button class="btn btn-primary" id="tailor-btn" onclick="tailorResume()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Tailor Resume
+          </button>
+          <div class="loading-wrap" id="loading">
+            <div class="spinner"></div>
+            <span class="loading-text" id="loading-text">Analysing job description...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div id="results" style="display:none;">
+        <hr class="divider">
+
+        <!-- Analysis -->
+        <div class="result-section">
+          <div class="section-label">Analysis</div>
+          <div class="analysis-card">
+            <div class="analysis-header">
+              <div class="analysis-title" id="result-title">—</div>
+              <span class="badge badge-green" id="fit-badge">✓ fits one page</span>
+            </div>
+            <div class="analysis-grid">
+              <div class="analysis-stat">
+                <div class="analysis-stat-label">Est. lines</div>
+                <div class="analysis-stat-value" id="stat-lines">—</div>
+              </div>
+              <div class="analysis-stat">
+                <div class="analysis-stat-label">Bullets changed</div>
+                <div class="analysis-stat-value" id="stat-bullets">—</div>
+              </div>
+              <div class="analysis-stat">
+                <div class="analysis-stat-label">Role type</div>
+                <div class="analysis-stat-value" style="font-size:13px;" id="stat-role">—</div>
+              </div>
+            </div>
+            <div class="section-label">Projects selected</div>
+            <div class="tags" id="projects-tags"></div>
+            <div class="section-label" style="margin-top:16px;">Skills matched</div>
+            <div class="tags" id="skills-tags"></div>
+            <div class="reasoning-text" id="reasoning-text"></div>
+          </div>
+        </div>
+
+        <!-- Diff viewer -->
+        <div class="result-section">
+          <div class="section-label">Changes</div>
+          <div class="diff-container">
+            <div class="diff-tabs">
+              <div class="diff-tab active" data-file="experience.tex" onclick="switchDiff('experience.tex', this)">experience.tex</div>
+              <div class="diff-tab" data-file="projects.tex" onclick="switchDiff('projects.tex', this)">projects.tex</div>
+              <div class="diff-tab" data-file="skills.tex" onclick="switchDiff('skills.tex', this)">skills.tex</div>
+            </div>
+            <div id="diff-experience.tex" class="diff-panel active">
+              <div class="diff-content" id="diff-content-experience.tex"></div>
+            </div>
+            <div id="diff-projects.tex" class="diff-panel">
+              <div class="diff-content" id="diff-content-projects.tex"></div>
+            </div>
+            <div id="diff-skills.tex" class="diff-panel">
+              <div class="diff-content" id="diff-content-skills.tex"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-bar">
+          <button class="btn btn-green" onclick="approveAndSave()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Approve & Save
+          </button>
+          <button class="btn btn-ghost" onclick="resetForm()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Start Over
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY PANEL -->
+    <div class="panel" id="panel-history">
+      <div class="panel-title">History</div>
+      <div class="panel-sub">All tailored resumes saved locally in your repo's <code>tailored/</code> folder.</div>
+      <div id="history-list" class="history-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">📂</div>
+          <div>No tailored resumes yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETUP PANEL -->
+    <div class="panel" id="panel-setup">
+      <div class="panel-title">Setup</div>
+      <div class="panel-sub">Configure the agent to point to your local resume repo.</div>
+
+      <div id="config-status"></div>
+
+      <hr class="divider">
+
+      <div class="section-label">How to run</div>
+      <div class="code-block">
+        <span class="comment"># 1. Install dependencies</span><br>
+        <span class="cmd">pip install flask anthropic</span><br><br>
+        <span class="comment"># 2. Set environment variables</span><br>
+        <span class="cmd">export RESUME_REPO_PATH=~/Documents/resume-latex</span><br>
+        <span class="cmd">export ANTHROPIC_API_KEY=sk-ant-...</span><br><br>
+        <span class="comment"># 3. Run the app</span><br>
+        <span class="cmd">python app.py</span>
+      </div>
+
+      <div class="section-label" style="margin-top:24px;">File structure expected</div>
+      <div class="code-block">
+        resume-latex/<br>
+        ├── <span class="cmd">src/</span><br>
+        │   ├── experience.tex<br>
+        │   ├── projects.tex<br>
+        │   ├── projects-bank.tex &nbsp;<span class="comment"># all projects, never edited by agent</span><br>
+        │   ├── skills.tex<br>
+        │   ├── activities.tex<br>
+        │   ├── heading.tex<br>
+        │   └── education.tex<br>
+        ├── custom-commands.tex<br>
+        ├── resume.tex<br>
+        └── <span class="cmd">tailored/</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># agent saves here</span>
+      </div>
+
+      <div class="section-label" style="margin-top:24px;">Sync with Overleaf</div>
+      <div class="code-block">
+        <span class="comment"># After editing in Overleaf: download source zip, copy to repo</span><br>
+        <span class="cmd">cp ~/Downloads/resume-latex/*.tex ~/Documents/resume-latex/</span><br>
+        <span class="cmd">cp ~/Downloads/resume-latex/src/*.tex ~/Documents/resume-latex/src/</span><br>
+        <span class="cmd">git add . && git commit -m "sync from overleaf" && git push</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+let currentResult = null;
+const loadingMessages = [
+  "Analysing job description...",
+  "Matching skills and keywords...",
+  "Selecting best projects...",
+  "Rewriting experience bullets...",
+  "Checking one-page fit...",
+  "Finalising tailored resume..."
+];
+let loadingInterval;
+
+// Nav
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('panel-' + item.dataset.panel).classList.add('active');
+    if (item.dataset.panel === 'history') loadHistory();
+    if (item.dataset.panel === 'setup') loadConfig();
+  });
+});
+
+// Status check
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/check-config');
+    const d = await r.json();
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (d.ok) {
+      dot.className = 'status-dot ok';
+      txt.textContent = `${d.files_found.length} files loaded`;
+    } else {
+      dot.className = 'status-dot err';
+      txt.textContent = 'config needed';
+    }
+  } catch(e) {}
+}
+
+async function loadConfig() {
+  const r = await fetch('/api/check-config');
+  const d = await r.json();
+  const el = document.getElementById('config-status');
+  const checks = [
+    { label: 'RESUME_REPO_PATH', ok: !d.issues.some(i => i.includes('RESUME_REPO_PATH')), val: d.issues.find(i => i.includes('RESUME_REPO_PATH')) || `${d.files_found.length} files found` },
+    { label: 'ANTHROPIC_API_KEY', ok: !d.issues.some(i => i.includes('ANTHROPIC_API_KEY')), val: d.issues.find(i => i.includes('ANTHROPIC_API_KEY')) || 'set ✓' },
+  ];
+  el.innerHTML = checks.map(c => `
+    <div class="config-row">
+      <div class="config-icon ${c.ok ? 'ok' : 'err'}">${c.ok ? '✓' : '✗'}</div>
+      <div><div class="config-label">${c.label}</div><div class="config-val">${c.val}</div></div>
+    </div>
+  `).join('');
+}
+
+async function tailorResume() {
+  const jd = document.getElementById('jd').value.trim();
+  const company = document.getElementById('company').value.trim();
+  const role = document.getElementById('role').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+
+  if (!jd) { showError('Please paste a job description.'); return; }
+  if (!company) { showError('Please enter the company name.'); return; }
+  if (!role) { showError('Please enter the role.'); return; }
+
+  hideError();
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('tailor-btn').disabled = true;
+  const loading = document.getElementById('loading');
+  loading.classList.add('show');
+
+  let msgIdx = 0;
+  loadingInterval = setInterval(() => {
+    msgIdx = (msgIdx + 1) % loadingMessages.length;
+    document.getElementById('loading-text').textContent = loadingMessages[msgIdx];
+  }, 1800);
+
+  try {
+    const r = await fetch('/api/tailor', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ jd, company, role, api_key: apiKey })
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) { showError(d.error || 'Unknown error'); return; }
+    currentResult = d;
+    renderResults(d);
+  } catch(e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    clearInterval(loadingInterval);
+    loading.classList.remove('show');
+    document.getElementById('tailor-btn').disabled = false;
+  }
+}
+
+function renderResults(d) {
+  const a = d.analysis;
+  document.getElementById('result-title').textContent = `${d.company} — ${d.role}`;
+  document.getElementById('stat-lines').textContent = a.estimated_lines || '—';
+  document.getElementById('stat-bullets').textContent = a.bullets_changed || '—';
+  document.getElementById('stat-role').textContent = a.role_type || '—';
+  document.getElementById('reasoning-text').textContent = a.reasoning || '';
+
+  const fitBadge = document.getElementById('fit-badge');
+  if (a.one_page_fit) {
+    fitBadge.className = 'badge badge-green';
+    fitBadge.textContent = '✓ fits one page';
+  } else {
+    fitBadge.className = 'badge badge-amber';
+    fitBadge.textContent = '⚠ may overflow';
+  }
+
+  document.getElementById('projects-tags').innerHTML = (a.projects_selected || []).map(p => `<span class="tag highlight">${p}</span>`).join('');
+  document.getElementById('skills-tags').innerHTML = (a.key_skills_matched || []).map(s => `<span class="tag">${s}</span>`).join('');
+
+  // Render diffs
+  ['experience.tex', 'projects.tex', 'skills.tex'].forEach(f => {
+    const diff = d.diffs[f] || [];
+    const el = document.getElementById(`diff-content-${f}`);
+    let lineNum = 0;
+    el.innerHTML = diff.map(line => {
+      if (line.type !== 'removed') lineNum++;
+      const esc = (line.line || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div class="diff-line ${line.type}"><span class="diff-line-num">${line.type !== 'removed' ? lineNum : ''}</span><span class="diff-line-content">${esc}</span></div>`;
+    }).join('');
+  });
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function switchDiff(file, tab) {
+  document.querySelectorAll('.diff-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.diff-panel').forEach(p => p.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById(`diff-${file}`).classList.add('active');
+}
+
+async function approveAndSave() {
+  if (!currentResult) return;
+  try {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        files: currentResult.files,
+        company: currentResult.company,
+        role: currentResult.role,
+        analysis: currentResult.analysis
+      })
+    });
+    const d = await r.json();
+    if (d.error) { showError(d.error); return; }
+    
+    // Trigger zip download
+    await fetch('/api/download-zip', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ zip_path: d.zip_path, zip_name: d.zip_name })
+    }).then(async res => {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = d.zip_name; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    showSuccess(`Saved to <code>${d.saved_to}</code> and downloading zip for Overleaf.`);
+  } catch(e) {
+    showError('Save failed: ' + e.message);
+  }
+}
+
+async function loadHistory() {
+  const r = await fetch('/api/history');
+  const items = await r.json();
+  const el = document.getElementById('history-list');
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No tailored resumes yet.</div></div>';
+    return;
+  }
+  el.innerHTML = items.map(i => `
+    <div class="history-item">
+      <div class="history-meta">
+        <div class="history-name">${i.company || '—'} — ${i.role || '—'}</div>
+        <div class="history-date">${i.date || ''}</div>
+        <div class="history-badges">
+          ${i.analysis?.one_page_fit ? '<span class="badge badge-green">one page</span>' : ''}
+          ${i.analysis?.role_type ? `<span class="badge badge-purple">${i.analysis.role_type}</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  document.getElementById('error-text').innerHTML = msg;
+  el.classList.add('show');
+  document.getElementById('success-banner').classList.remove('show');
+}
+
+function hideError() {
+  document.getElementById('error-banner').classList.remove('show');
+}
+
+function showSuccess(msg) {
+  const el = document.getElementById('success-banner');
+  document.getElementById('success-text').innerHTML = msg;
+  el.classList.add('show');
+  document.getElementById('error-banner').classList.remove('show');
+}
+
+function resetForm() {
+  document.getElementById('jd').value = '';
+  document.getElementById('company').value = '';
+  document.getElementById('role').value = '';
+  document.getElementById('results').style.display = 'none';
+  currentResult = null;
+  hideError();
+  document.getElementById('success-banner').classList.remove('show');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+checkStatus();
+</script>
+</body>
+</html>
