@@ -1,23 +1,51 @@
 import os
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
 import anthropic
-import zipfile
-import io
 import tempfile
 from datetime import datetime
 
 app = Flask(__name__)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+@app.after_request
+def add_no_cache(response):
+    if request.path == '/':
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+    return response
+
+PDFLATEX = "/Library/TeX/texbin/pdflatex"
+JOB_APPS_DIR = Path.home() / "Downloads" / "ApplyDocumentsAgent"
 
 RESUME_FILES = ["experience.tex", "projects.tex", "skills.tex", "activities.tex"]
 READONLY_FILES = ["heading.tex", "education.tex", "custom-commands.tex", "resume.tex"]
 
+def load_env():
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+
+load_env()
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
 def get_repo_path():
-    return os.environ.get("RESUME_REPO_PATH", "")
+    raw = os.environ.get("RESUME_REPO_PATH", "")
+    if not raw:
+        return ""
+    p = Path(raw)
+    if not p.is_absolute():
+        # resolve relative to app.py location
+        p = (Path(__file__).parent / p).resolve()
+    return str(p)
 
 def read_file(repo_path, filename):
     candidates = [
@@ -41,7 +69,7 @@ def read_projects_bank(repo_path):
 
 def build_master_context(repo_path):
     ctx = {}
-    for f in RESUME_FILES + READONLY_FILES:
+    for f in RESUME_FILES:
         content = read_file(repo_path, f)
         if content:
             ctx[f] = content
@@ -63,13 +91,13 @@ def check_config():
         issues.append(f"Repo path does not exist: {repo_path}")
     if not api_key:
         issues.append("ANTHROPIC_API_KEY not set")
-    
+
     files_found = []
     if repo_path and Path(repo_path).exists():
         for f in RESUME_FILES:
             if read_file(repo_path, f):
                 files_found.append(f)
-    
+
     return jsonify({"ok": len(issues) == 0, "issues": issues, "files_found": files_found})
 
 @app.route("/api/tailor", methods=["POST"])
@@ -109,68 +137,116 @@ Job Description:
 {jd}
 
 ## YOUR TASK
-Produce tailored versions of ONLY these three files: experience.tex, projects.tex, skills.tex
+Produce tailored versions of ONLY experience.tex and projects.tex.
+Also produce a scoring analysis BEFORE and AFTER tailoring.
 
-Rules:
-1. EXPERIENCE.TEX:
-   - For each job, select the BEST 3-5 bullet points that match the JD
-   - Uncomment variants that better match the JD (e.g. AWS variant vs Azure variant)
-   - Comment out weaker bullets with %
-   - Rewrite active bullets to naturally include JD keywords where truthful
-   - Keep ALL job entries (Brightstar, Uber Senior, Uber Intern) — never remove a job
-   - Preserve all LaTeX formatting exactly
+---
 
-2. PROJECTS.TEX:
-   - Choose the 2-3 BEST projects from projects-bank.tex that match this role
-   - For chosen projects, pick the best bullet variant (uncomment it, comment others)
-   - Comment out non-selected projects entirely with %
-   - Preserve all LaTeX formatting and hyperlinks exactly
+## PART 1 — GENERAL RULES (apply to BOTH files)
 
-3. SKILLS.TEX:
-   - Reorder items within each category to front-load the most JD-relevant skills
-   - Do NOT add skills that aren't already there
-   - Keep all four rows (Languages & Tools, Machine Learning, Libraries & Visualization, Soft Skills)
+1. BULLET LENGTH — STRICT RANGE:
+   - Every \\resumeItem bullet must be between 210 and 245 characters (counting all text inside the braces).
+   - Target 210-230 characters as the sweet spot — enough to pack in JD keywords without overflowing.
+   - Before writing each bullet, count the characters. If it exceeds 245, cut words until it fits.
+   - No bullet may fall outside the 210-245 character count range. No exceptions. Hold on this rule above all else.
 
-4. ONE PAGE CHECK:
-   - Count approximate line usage. A standard resume fits ~52-55 lines of content.
-   - If over budget, trim lower-priority bullets (comment them out).
-   - Report estimated line count in your analysis.
+2. LANGUAGE MIRRORING — PRIMARY GOAL:
+   - Before writing anything, extract a vocabulary list from the JD: industry terms, action verbs, methodologies, buzzwords, and product names the company uses.
+   - Every bullet in BOTH files must use 1-2 phrases directly lifted from the JD vocabulary list.
+   - Use the company's exact words, not synonyms.
+   - Mirror sentence structure: noun-heavy JD → noun-heavy bullets; verb-heavy JD → verb-heavy bullets.
+   - Facts, tools, and metrics must stay truthful — only framing and vocabulary changes.
+
+3. LATEX FORMATTING:
+   - Preserve all LaTeX commands, bold tags, and special characters exactly.
+   - Update \\textbf{{}} tags to bold newly inserted JD keywords.
+   - Never break LaTeX syntax.
+
+---
+
+## PART 2 — EXPERIENCE.TEX RULES
+
+1. KEEP ALL BULLET POINTS — do not add or remove any bullet. Every bullet must appear, either active or commented.
+2. REWRITING:
+   - Lead each bullet with a strong action verb matching the JD tone.
+   - Swap generic terms for JD-specific equivalents where truthful.
+   - Weave in 1-2 JD keywords naturally per bullet.
+   - Never invent metrics or tools not in the original bullet.
+3. SAMSUNG INTERN: uncomment only if the role is ML, software, or data engineering. Otherwise keep commented.
+4. Do not change the order of jobs or bullets.
+
+---
+
+## PART 3 — PROJECTS.TEX RULES
+
+1. ALWAYS include Boston 311 Dashboard & Chatbot with EXACTLY 2 bullet points.
+2. Pick exactly 2 more projects from projects-bank.tex that best match the JD.
+   - Each of the 2 additional projects gets EXACTLY 1 bullet point — pick the strongest, comment out the rest.
+   - Total: exactly 3 projects, no more, no less.
+   - Comment out all other projects entirely.
+3. PROJECT BULLET REWRITING:
+   - Apply the same language mirroring rule — use JD vocabulary in every project bullet.
+   - Frame project outcomes in the company's domain language.
+   - A supply chain company sees fulfillment/logistics framing; an ML company sees inference/serving framing.
+4. Preserve all LaTeX formatting and hyperlinks exactly.
+
+---
+
+## SCORING
+
+Score BEFORE and AFTER tailoring (0-10 each):
+- keyword_match: how well resume keywords align with JD
+- skills_coverage: how many required skills are present
+- experience_relevance: how relevant the roles/bullets are
+- projects_relevance: how well projects match the role
+- overall: weighted average
+
+Top 3 gaps using this exact format:
+"GAP: [what JD wants] → FIX: [specific actionable suggestion referencing a real bullet or section]"
+
+---
 
 ## OUTPUT FORMAT
-Return ONLY valid JSON in this exact structure, no markdown, no explanation outside JSON:
+Return ONLY valid JSON, no markdown, no extra text outside JSON:
 {{
+  "scoring": {{
+    "before": {{"keyword_match": 7, "skills_coverage": 6, "experience_relevance": 8, "projects_relevance": 5, "overall": 6.5}},
+    "after": {{"keyword_match": 9, "skills_coverage": 8, "experience_relevance": 8, "projects_relevance": 8, "overall": 8.2}},
+    "gaps": [
+      "GAP: JD requires Kubernetes orchestration → FIX: Reframe the Docker/Cloud Run bullet in Brightstar to mention container orchestration at scale",
+      "GAP: JD emphasizes real-time inference → FIX: Add real-time framing to the RAG deployment bullet in Brightstar",
+      "GAP: JD asks for A/B testing → FIX: The Uber fraud detection bullet mentions A/B testing — bold it with \\\\textbf"
+    ]
+  }},
   "analysis": {{
     "role_type": "...",
     "key_skills_matched": ["skill1", "skill2"],
-    "projects_selected": ["project1", "project2"],
-    "bullets_changed": 3,
+    "projects_selected": ["project1", "project2", "project3"],
+    "samsung_included": true,
     "estimated_lines": 52,
     "one_page_fit": true,
     "reasoning": "2-3 sentence summary of tailoring decisions"
   }},
   "files": {{
     "experience.tex": "...full file content...",
-    "projects.tex": "...full file content...",
-    "skills.tex": "...full file content..."
+    "projects.tex": "...full file content..."
   }}
 }}"""
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5",
             max_tokens=8000,
             messages=[{"role": "user", "content": prompt}]
         )
         raw = message.content[0].text.strip()
-        # Strip any accidental markdown fences
         raw = re.sub(r"^```json\s*", "", raw)
         raw = re.sub(r"^```\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         result = json.loads(raw)
 
-        # Build diffs
         diffs = {}
-        for fname in ["experience.tex", "projects.tex", "skills.tex"]:
+        for fname in ["experience.tex", "projects.tex"]:
             original = ctx.get(fname, "")
             tailored = result["files"].get(fname, "")
             diffs[fname] = build_diff(original, tailored)
@@ -192,24 +268,17 @@ def build_diff(original, tailored):
     orig_lines = original.splitlines()
     tail_lines = tailored.splitlines()
     diff = []
-    
-    orig_set = set(orig_lines)
-    tail_set = set(tail_lines)
-    
-    # Simple line-by-line diff
-    max_len = max(len(orig_lines), len(tail_lines))
     o_idx, t_idx = 0, 0
-    
+
     while o_idx < len(orig_lines) or t_idx < len(tail_lines):
         o_line = orig_lines[o_idx] if o_idx < len(orig_lines) else None
         t_line = tail_lines[t_idx] if t_idx < len(tail_lines) else None
-        
+
         if o_line == t_line:
             diff.append({"type": "same", "line": o_line})
             o_idx += 1
             t_idx += 1
         elif o_line is not None and t_line is not None:
-            # Check if one was commented/uncommented version of other
             o_stripped = o_line.lstrip("% ").strip()
             t_stripped = t_line.lstrip("% ").strip()
             if o_stripped == t_stripped:
@@ -235,92 +304,161 @@ def build_diff(original, tailored):
 
     return diff
 
+def compile_pdf(build_dir: Path, tex_filename: str = "resume.tex") -> tuple[bool, str]:
+    cmd = [
+        PDFLATEX,
+        "-interaction=nonstopmode",
+        "-output-directory", str(build_dir),
+        tex_filename  # just the filename, not full path
+    ]
+    log = ""
+    try:
+        for _ in range(2):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(build_dir)  # run FROM inside the build dir
+            )
+            log = result.stdout[-2000:] if result.stdout else result.stderr[-2000:]
+        pdf_out = build_dir / tex_filename.replace(".tex", ".pdf")
+        return pdf_out.exists(), log
+    except subprocess.TimeoutExpired:
+        return False, "pdflatex timed out after 60s"
+    except Exception as e:
+        return False, str(e)
+
+def build_compile_dir(repo_path: str, tailored_files: dict) -> Path:
+    build_dir = Path(tempfile.mkdtemp(prefix="resume_build_"))
+    src_dir = build_dir / "src"
+    src_dir.mkdir()
+
+    repo = Path(repo_path)
+
+    # Copy everything from repo root into build root
+    for f in repo.glob("*.tex"):
+        shutil.copy(f, build_dir / f.name)
+
+    # Copy everything from repo src/ into build src/
+    src_source = repo / "src"
+    if src_source.exists():
+        for f in src_source.glob("*.tex"):
+            shutil.copy(f, src_dir / f.name)
+
+    # Overwrite with tailored versions into src/
+    for fname, content in tailored_files.items():
+        (src_dir / fname).write_text(content)
+
+    return build_dir
+
 @app.route("/api/save", methods=["POST"])
 def save():
     data = request.json
     files = data.get("files", {})
-    company = data.get("company", "company").strip().lower().replace(" ", "-")
-    role = data.get("role", "role").strip().lower().replace(" ", "-")
+    company_raw = data.get("company", "Company").strip()
+    role_raw = data.get("role", "Role").strip()
+    company = company_raw.lower().replace(" ", "-")
+    role = role_raw.lower().replace(" ", "-")
     repo_path = get_repo_path()
 
     if not repo_path:
         return jsonify({"error": "RESUME_REPO_PATH not set"}), 400
 
     date_str = datetime.now().strftime("%Y%m%d")
-    output_dir = Path(repo_path) / "tailored" / f"{company}_{role}_{date_str}"
+    folder_name = f"{company_raw.replace(' ', '')}_{role_raw.replace(' ', '')}_{date_str}"
+
+    output_dir = JOB_APPS_DIR / folder_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    saved = []
     for fname, content in files.items():
-        out_path = output_dir / fname
-        out_path.write_text(content)
-        saved.append(str(out_path))
+        (output_dir / fname).write_text(content)
 
-    # Also write a manifest
     manifest = {
-        "company": data.get("company"),
-        "role": data.get("role"),
+        "company": company_raw,
+        "role": role_raw,
         "date": date_str,
         "analysis": data.get("analysis", {})
     }
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-    # Create zip for download
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zf:
-        # Include tailored files
-        for fname, content in files.items():
-            zf.writestr(f"src/{fname}", content)
-        # Include readonly files as-is
-        for fname in READONLY_FILES:
-            content = read_file(repo_path, fname)
-            if content:
-                if fname in ["heading.tex", "education.tex", "activities.tex"]:
-                    zf.writestr(f"src/{fname}", content)
-                else:
-                    zf.writestr(fname, content)
-        # Include manifest
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-    
-    zip_buffer.seek(0)
-    zip_name = f"resume_{company}_{role}_{date_str}.zip"
-    
-    # Save zip to output dir too
-    zip_path = output_dir / zip_name
-    zip_path.write_bytes(zip_buffer.getvalue())
+    pdf_path = None
+    pdf_error = None
+    try:
+        build_dir = build_compile_dir(repo_path, files)
+        success, log = compile_pdf(build_dir, "resume.tex")
+        if success:
+            pdf_src = build_dir / "resume.pdf"
+            pdf_name = f"resume_{company}_{role}_{date_str}.pdf"
+            pdf_path = output_dir / pdf_name
+            shutil.copy(pdf_src, pdf_path)
+        else:
+            pdf_error = f"pdflatex failed. Log tail: {log[-500:]}"
+        shutil.rmtree(build_dir, ignore_errors=True)
+    except Exception as e:
+        pdf_error = str(e)
 
     return jsonify({
         "saved_to": str(output_dir),
-        "zip_name": zip_name,
-        "zip_path": str(zip_path),
-        "files_saved": saved
+        "pdf_path": str(pdf_path) if pdf_path else None,
+        "pdf_name": pdf_path.name if pdf_path else None,
+        "pdf_error": pdf_error,
+        "folder_name": folder_name
     })
 
-@app.route("/api/download-zip", methods=["POST"])
-def download_zip():
+@app.route("/api/download-pdf", methods=["POST"])
+def download_pdf():
     data = request.json
-    zip_path = data.get("zip_path")
-    zip_name = data.get("zip_name", "resume.zip")
-    if not zip_path or not Path(zip_path).exists():
-        return jsonify({"error": "Zip not found"}), 404
-    return send_file(zip_path, as_attachment=True, download_name=zip_name)
+    pdf_path = data.get("pdf_path")
+    pdf_name = data.get("pdf_name", "resume.pdf")
+    if not pdf_path or not Path(pdf_path).exists():
+        return jsonify({"error": "PDF not found"}), 404
+    return send_file(pdf_path, as_attachment=True, download_name=pdf_name)
+
+@app.route("/api/open-folder", methods=["POST"])
+def open_folder():
+    data = request.json
+    folder = data.get("folder")
+    if folder and Path(folder).exists():
+        subprocess.run(["open", folder])
+    return jsonify({"ok": True})
 
 @app.route("/api/history")
 def history():
-    repo_path = get_repo_path()
-    if not repo_path:
-        return jsonify([])
-    tailored_dir = Path(repo_path) / "tailored"
-    if not tailored_dir.exists():
+    if not JOB_APPS_DIR.exists():
         return jsonify([])
     entries = []
-    for d in sorted(tailored_dir.iterdir(), reverse=True):
+    for d in sorted(JOB_APPS_DIR.iterdir(), reverse=True):
         manifest_path = d / "manifest.json"
         if manifest_path.exists():
             m = json.loads(manifest_path.read_text())
-            m["folder"] = d.name
+            m["folder"] = str(d)
             entries.append(m)
     return jsonify(entries)
+
+@app.route("/api/preview", methods=["POST"])
+def preview():
+    data = request.json
+    files = data.get("files", {})
+    repo_path = get_repo_path()
+
+    if not repo_path:
+        return jsonify({"error": "RESUME_REPO_PATH not set"}), 400
+
+    try:
+        build_dir = build_compile_dir(repo_path, files)
+        success, log = compile_pdf(build_dir, "resume.tex")
+        if success:
+            pdf_bytes = (build_dir / "resume.pdf").read_bytes()
+            import base64
+            pdf_b64 = base64.b64encode(pdf_bytes).decode()
+            shutil.rmtree(build_dir, ignore_errors=True)
+            return jsonify({"pdf_b64": pdf_b64})
+        else:
+            shutil.rmtree(build_dir, ignore_errors=True)
+            return jsonify({"error": f"Compile failed: {log[-500:]}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     print("\n🚀 Resume Tailoring Agent")
