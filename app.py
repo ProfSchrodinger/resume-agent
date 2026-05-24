@@ -236,6 +236,7 @@ Return ONLY valid JSON, no markdown, no extra text outside JSON:
     try:
         message = client.messages.create(
             model="claude-sonnet-4-5",
+            # model="claude-haiku-4-5",
             max_tokens=8000,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -366,7 +367,7 @@ def save():
         return jsonify({"error": "RESUME_REPO_PATH not set"}), 400
 
     date_str = datetime.now().strftime("%Y%m%d")
-    folder_name = f"{company_raw.replace(' ', '')}_{role_raw.replace(' ', '')}_{date_str}"
+    folder_name = f"{company_raw.strip().title().replace(' ', '')}_{date_str}"
 
     output_dir = JOB_APPS_DIR / folder_name
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -389,7 +390,7 @@ def save():
         success, log = compile_pdf(build_dir, "resume.tex")
         if success:
             pdf_src = build_dir / "resume.pdf"
-            pdf_name = f"resume_{company}_{role}_{date_str}.pdf"
+            pdf_name = f"Resume_Sabari_{company_raw.strip().title().replace(' ', '')}.pdf"
             pdf_path = output_dir / pdf_name
             shutil.copy(pdf_src, pdf_path)
         else:
